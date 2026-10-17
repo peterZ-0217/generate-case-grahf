@@ -1,0 +1,50 @@
+# provider 选择：取值对应下面的配置块，
+#   default   → 使用 llm 块
+#   deepseek  → 使用 llm-deepseek 块
+# 也可用命令行 --llm-provider deepseek 临时覆盖本配置。
+# 新增厂商：加一个 llm-<name> 块即可，无需改代码。
+llm_provider: deepseek
+
+# 默认 provider（Kimi Code K3）。temperature 写 false 表示不向厂商传该参数（K3 温度固定）。
+# 启动方式：--llm-provider default
+llm:
+  model: k3
+  base_url: "https://api.kimi.com/coding/v1"
+  api_key_env: MOONSHOT_API_KEY
+  temperature: false      # Kimi K3 温度固定，客户端不传递该参数
+
+# DeepSeek：base_url 走官方 OpenAI 兼容端点，模型按项目内部命名 deepseek-v4-flash。
+# 密钥优先级：本块 api_key 直填 > 环境变量 api_key_env > mock 模式。
+# 建议把 api_key 改为 "${DEEPSEEK_API_KEY}" 并把真实密钥放进环境变量（见文档）。
+llm-deepseek:
+  model: deepseek-v4-flash
+  base_url: "https://api.deepseek.com/v1"
+  api_key_env: DEEPSEEK_API_KEY
+  api_key: "sk-4f7f9ad27f7d4362be89d63741d37024"
+  temperature: 0.2
+  # 厂商特有参数可选，原样透传给接口，例如：
+  # request:
+  #   max_tokens: 4096
+
+# 未配置 API Key 时启用 mock 模式（流程可跑通，LLM 产出为占位内容）
+mock_when_no_api_key: true
+
+# 校验发现未覆盖规则句时，回灌重抽的最大轮数
+validate_max_retry: 1
+
+output_dir: output
+
+# 日志同时输出到控制台和 {log_dir}/agent.log
+# name 统一为 prd_agent.<模块>，节点日志为 prd_agent.node.<节点名>
+log_level: INFO
+log_dir: logs
+
+# 节点入参/出参结构体日志的预算：
+#   log_max_chars     单次结构体打印的总字符上限（超出截断）
+#   log_max_str_chars 单个字符串字段的上限（raw_md / core_text 这类长文本靠它裁剪）
+#   log_max_items     单个列表最多打印多少项
+#   log_node_level    节点日志级别，DEBUG 可看到更多细节
+log_max_chars: 4000
+log_max_str_chars: 300
+log_max_items: 20
+log_node_level: INFO

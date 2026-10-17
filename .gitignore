@@ -1,0 +1,17 @@
+# 本地配置含密钥，禁止提交
+config/settings.yaml
+
+# 运行产物与日志
+logs/
+output/_mock_backup/
+_tmp_verify/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# IDE
+.idea/
+src/.idea/
