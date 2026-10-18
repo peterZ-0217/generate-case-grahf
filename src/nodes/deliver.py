@@ -27,6 +27,7 @@ def human_review(state: AgentState) -> Dict[str, Any]:
             "review_status": "rejected",
             "human_feedback": feedback,
             "retry_hints": [feedback] if feedback else [],
+            "retry_unit_ids": [unit["id"] for unit in state["units"]],
             "next_route": "extract_points",
         }
     return {"review_status": "approved", "next_route": "output"}

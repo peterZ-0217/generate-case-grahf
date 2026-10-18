@@ -67,7 +67,6 @@ def _cross_check(llm: LLMClient, state: AgentState) -> List[Dict[str, str]]:
     if llm.mock:
         return []
     points_a = [{"title": p["title"], "scenario": p["scenario"]} for p in state["test_points"]]
-    # 独立第二份清单：整体重抽一次
     points_b = llm.chat_json(
         prompts.EXTRACT_POINTS_SYSTEM,
         prompts.EXTRACT_POINTS_USER.format(
@@ -79,10 +78,14 @@ def _cross_check(llm: LLMClient, state: AgentState) -> List[Dict[str, str]]:
         ),
         mock=[],
     )
+    units = [
+        {"id": u["id"], "title": u["title"], "source": u["source"]}
+        for u in state["units"]
+    ]
     diff = llm.chat_json(
         prompts.CROSS_CHECK_SYSTEM,
         prompts.CROSS_CHECK_USER.format(
-            core_text=state["core_text"], points_a=points_a, points_b=points_b
+            core_text=state["core_text"], points_a=points_a, points_b=points_b, units=units
         ),
         mock=[],
     )
@@ -115,6 +118,32 @@ def _checklist_gaps(state: AgentState) -> List[Dict[str, str]]:
     return gaps
 
 
+def _normalize(text: str) -> str:
+    return re.sub(r"[^\w]+", "", text).casefold()
+
+
+def _locate_retry_units(
+    uncovered: List[str], b_diff: List[Dict[str, str]], units: List[Dict[str, Any]]
+) -> List[str]:
+    all_ids = [u["id"] for u in units]
+    targets = set()
+    for sentence in uncovered:
+        normalized = _normalize(sentence)
+        matches = [
+            u["id"] for u in units
+            if normalized and normalized in _normalize(u["source"])
+        ]
+        if not matches:
+            return all_ids
+        targets.update(matches)
+    for diff in b_diff:
+        unit_id = str(diff.get("unit_id", "")).strip()
+        if unit_id not in all_ids:
+            return all_ids
+        targets.add(unit_id)
+    return [unit_id for unit_id in all_ids if unit_id in targets]
+
+
 def validate(state: AgentState, llm: LLMClient, max_retry: int) -> Dict[str, Any]:
     sentences = split_rule_sentences(state["core_text"])
     sentences = [s for s in sentences if not _SKIP_RE.match(s)]
@@ -131,8 +160,22 @@ def validate(state: AgentState, llm: LLMClient, max_retry: int) -> Dict[str, Any
 
     retry = state.get("validate_retry", 0)
     uncovered = [u["sentence"] for u in coverage["uncovered"]]
-    hints = uncovered + [d.get("title", "") for d in cross_diff if d.get("title")]
+    b_diff = [
+        d for d in cross_diff
+        if str(d.get("from", "")).strip().upper() == "B" and str(d.get("title", "")).strip()
+    ]
+    hints = uncovered + [str(d["title"]).strip() for d in b_diff]
     if hints and retry < max_retry:
-        return {"coverage_report": report, "retry_hints": hints, "validate_retry": retry + 1,
-                "next_route": "extract_points"}
-    return {"coverage_report": report, "validate_retry": retry, "next_route": "human_review"}
+        return {
+            "coverage_report": report,
+            "retry_hints": hints,
+            "retry_unit_ids": _locate_retry_units(uncovered, b_diff, state["units"]),
+            "validate_retry": retry + 1,
+            "next_route": "extract_points",
+        }
+    return {
+        "coverage_report": report,
+        "validate_retry": retry,
+        "retry_unit_ids": [],
+        "next_route": "human_review",
+    }

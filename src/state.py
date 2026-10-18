@@ -48,6 +48,7 @@ class AgentState(TypedDict, total=False):
     test_points: List[TestPoint]
 
     retry_hints: List[str]   # 校验回灌给抽取的未覆盖规则句 / 人工批注
+    retry_unit_ids: List[str]  # 本轮需要补抽的功能单元；为空时全量补抽
     coverage_report: Dict[str, Any]
     validate_retry: int
 

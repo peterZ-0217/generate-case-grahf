@@ -22,6 +22,14 @@ llm-deepseek:
   api_key_env: DEEPSEEK_API_KEY
   api_key: "sk-4f7f9ad27f7d4362be89d63741d37024"
   temperature: 0.2
+
+llm-debug:
+  model: deepseek-v4-flash
+  base_url: "http://118.89.203.213:8788/v1"
+  api_key_env: debug_API_KEY
+  temperature: 0.2
+  api_key: "sk-cpass-JMNVnUgjwbb6YxuE3Ojj1M7fHGuZ0_G4"
+
   # 厂商特有参数可选，原样透传给接口，例如：
   # request:
   #   max_tokens: 4096

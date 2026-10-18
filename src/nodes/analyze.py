@@ -62,6 +62,13 @@ def extract_points(state: AgentState, llm: LLMClient) -> Dict[str, Any]:
     units = state["units"]
     existing: List[TestPoint] = list(state.get("test_points", []))
     hints = list(state.get("retry_hints", []))
+    retry_unit_ids = set(state.get("retry_unit_ids", []))
+
+    target_units = units
+    if hints and retry_unit_ids:
+        selected = [unit for unit in units if unit["id"] in retry_unit_ids]
+        if selected:
+            target_units = selected
 
     retry_block = ""
     if hints:
@@ -74,8 +81,7 @@ def extract_points(state: AgentState, llm: LLMClient) -> Dict[str, Any]:
     points: List[TestPoint] = existing
     seq = len(existing)
 
-    for unit in units:
-        # 首轮抽取全部单元；回灌轮只针对与遗漏相关的单元做补充
+    for unit in target_units:
         result = llm.chat_json(
             prompts.EXTRACT_POINTS_SYSTEM,
             prompts.EXTRACT_POINTS_USER.format(
@@ -113,4 +119,4 @@ def extract_points(state: AgentState, llm: LLMClient) -> Dict[str, Any]:
                 source_lines=unit.get("source_lines", ""),
             ))
 
-    return {"test_points": points, "retry_hints": []}
+    return {"test_points": points, "retry_hints": [], "retry_unit_ids": []}
