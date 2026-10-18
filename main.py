@@ -24,9 +24,11 @@ from src.graph import build_graph
 def _print_review_materials(payload: dict) -> None:
     print("\n" + "=" * 60)
     print(f"人工审核：{payload.get('doc_title', '')}")
-    print(f"功能单元 {payload.get('unit_count')} 个，测试点 {payload.get('test_point_count')} 条")
+    print(f"测试点模式：{payload.get('mode', 'prd_focused')}")
+    print(f"功能单元 {payload.get('unit_count')} 个，测试点 {payload.get('test_point_count')} 条"
+          f"（其中推导点 {payload.get('derived_point_count', 0)} 条）")
     cov = payload.get("coverage_report", {}).get("coverage", {})
-    print(f"覆盖率：{cov.get('covered')}/{cov.get('total')}（{cov.get('coverage_rate', 0):.1%}）")
+    print(f"PRD 规则覆盖率：{cov.get('covered')}/{cov.get('total')}（{cov.get('coverage_rate', 0):.1%}）")
     amb = payload.get("ambiguities") or []
     if amb:
         print("\n待确认歧义：")
@@ -46,6 +48,12 @@ def main() -> None:
         default=None,
         help="覆盖 settings 中的 llm_provider，取值对应配置块 llm / llm-<name>（如 deepseek）",
     )
+    parser.add_argument(
+        "--test-point-mode",
+        default=None,
+        choices=["prd_focused", "extended"],
+        help="测试点模式：prd_focused（PRD 明确规则+少量推导，默认）/ extended（更完整的测试经验扩展）",
+    )
     args = parser.parse_args()
 
     try:
@@ -53,8 +61,9 @@ def main() -> None:
     except Exception:
         pass
 
-    graph = build_graph(args.sections_config, args.settings_config, args.llm_provider)
-    print(f"[模型] provider={graph.llm_provider} model={graph.llm_model}")
+    graph = build_graph(args.sections_config, args.settings_config, args.llm_provider,
+                        args.test_point_mode)
+    print(f"[模型] provider={graph.llm_provider} model={graph.llm_model} mode={graph.test_point_mode}")
     if getattr(graph, "llm_mock", False):
         print("[提示] 未检测到 API Key，当前为 mock 模式：LLM 产出为占位内容，仅用于验证流程。")
 

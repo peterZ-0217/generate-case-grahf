@@ -16,18 +16,14 @@ class Unit(TypedDict):
     title: str
     type: str                # 触发规则 / 频控 / 交互 / 数据填充 / 状态流转 / 实验分组 / 其他
     source: str              # 原文引用片段
-    source_lines: str        # 如 "48-61"
 
 
 class TestPoint(TypedDict):
+    """覆盖点级测试点：字段只保留"验证什么 + 从哪来"，操作细节/测试数据下放下游。"""
     id: str
     unit_id: str
-    title: str
-    precondition: str
-    scenario: str
-    expected: str
-    type: str                # 正向 / 反向 / 边界 / 异常 / 状态流转 / 频控
-    source_lines: str
+    title: str               # 一句话验证断言：前半句条件、后半句预期行为
+    origin: str              # prd_explicit（PRD 明确规则）/ derived（测试经验推导）
 
 
 class AgentState(TypedDict, total=False):

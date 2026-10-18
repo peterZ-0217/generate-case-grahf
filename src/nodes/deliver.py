@@ -13,11 +13,14 @@ from ..state import AgentState
 def human_review(state: AgentState) -> Dict[str, Any]:
     """中断等待人工审核。审核材料由 CLI 展示；resume 值约定：
     {"status": "approved"} 或 {"status": "rejected", "feedback": "..."}（打回重抽）。"""
+    report = state.get("coverage_report") or {}
     decision = interrupt({
         "doc_title": state["doc_title"],
+        "mode": report.get("mode", "prd_focused"),
         "unit_count": len(state["units"]),
         "test_point_count": len(state["test_points"]),
-        "coverage_report": state["coverage_report"],
+        "derived_point_count": (report.get("derived_points") or {}).get("count", 0),
+        "coverage_report": report,
         "ambiguities": state["ambiguities"],
         "message": "请审核测试点。批准返回 {'status': 'approved'}；打回返回 {'status': 'rejected', 'feedback': '修改意见'}。",
     })
@@ -40,16 +43,17 @@ def _safe_name(title: str) -> str:
 
 def _points_md(state: AgentState) -> str:
     unit_map = {u["id"]: u for u in state["units"]}
+    origin_label = {"prd_explicit": "PRD", "derived": "推导"}
     lines = [f"# {state['doc_title']} — 测试点清单", ""]
     for unit in state["units"]:
         lines.append(f"## [{unit['id']}] {unit['title']}（{unit['type']}）")
         lines.append("")
-        lines.append("| ID | 测试点 | 类型 | 前置条件 | 预期结果 |")
-        lines.append("| --- | --- | --- | --- | --- |")
+        lines.append("| ID | 覆盖断言 | 来源 |")
+        lines.append("| --- | --- | --- |")
         for p in state["test_points"]:
             if p["unit_id"] == unit["id"]:
                 lines.append(
-                    f"| {p['id']} | {p['title']} | {p['type']} | {p['precondition']} | {p['expected']} |"
+                    f"| {p['id']} | {p['title']} | {origin_label.get(p.get('origin'), p.get('origin', ''))} |"
                 )
         lines.append("")
     orphan = [p for p in state["test_points"] if p["unit_id"] not in unit_map]
@@ -63,11 +67,13 @@ def _points_md(state: AgentState) -> str:
 def _report_md(state: AgentState) -> str:
     r = state["coverage_report"]
     cov = r["coverage"]
+    derived = (r.get("derived_points") or {}).get("count", 0)
     lines = [
         f"# {state['doc_title']} — 校验与审核报告", "",
+        f"- 测试点模式：{r.get('mode', 'prd_focused')}",
         f"- 功能单元数：{len(state['units'])}",
-        f"- 测试点数：{len(state['test_points'])}",
-        f"- 规则句覆盖率：{cov['covered']}/{cov['total']}（{cov['coverage_rate']:.1%}）",
+        f"- 测试点数：{len(state['test_points'])}（其中推导点 {derived} 条，不计入覆盖率）",
+        f"- PRD 规则句覆盖率（仅 prd_explicit）：{cov['covered']}/{cov['total']}（{cov['coverage_rate']:.1%}）",
         f"- 审核状态：{state.get('review_status', '未审核')}",
     ]
     if cov.get("note"):
@@ -77,14 +83,14 @@ def _report_md(state: AgentState) -> str:
         lines.append("## 未覆盖规则句")
         lines += [f"- {u['sentence']}（{u['reason']}）" for u in cov["uncovered"]]
         lines.append("")
-    if r["cross_check_diff"]:
+    if r.get("cross_check_diff"):
         lines.append("## 交叉校验差异项")
         lines += [f"- [{d.get('from', '?')}] {d.get('title', '')}：{d.get('reason', '')}"
                   for d in r["cross_check_diff"]]
         lines.append("")
-    if r["checklist_gaps"]:
-        lines.append("## 维度覆盖缺口")
-        lines += [f"- 单元「{g['unit']}」缺少维度：{g['missing_dimensions']}" for g in r["checklist_gaps"]]
+    if r.get("origin_corrections"):
+        lines.append("## 来源降级记录（标为明确规则但未匹配到 PRD 规则句）")
+        lines += [f"- [{c['id']}] {c['title']}（{c['reason']}）" for c in r["origin_corrections"]]
         lines.append("")
     if state["ambiguities"]:
         lines.append("## 待确认歧义清单")
@@ -98,13 +104,14 @@ def _report_md(state: AgentState) -> str:
     return "\n".join(lines)
 
 
-def output(state: AgentState, output_dir: str) -> Dict[str, Any]:
+def output(state: AgentState, output_dir: str, mode: str = "prd_focused") -> Dict[str, Any]:
     os.makedirs(output_dir, exist_ok=True)
     base = _safe_name(state["doc_title"])
 
     json_path = os.path.join(output_dir, f"{base}_test_points.json")
     payload = {
         "doc_title": state["doc_title"],
+        "mode": mode,
         "context": {"reference": state["reference_text"]},
         "units": state["units"],
         "test_points": state["test_points"],

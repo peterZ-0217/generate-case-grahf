@@ -40,6 +40,11 @@ mock_when_no_api_key: true
 # 校验发现未覆盖规则句时，回灌重抽的最大轮数
 validate_max_retry: 1
 
+# 测试点模式（可用 --test-point-mode 临时覆盖）：
+#   prd_focused  PRD 明确规则 + 少量必要的业务推导；通用异常/兼容性/操作细节下放下游（默认）
+#   extended     允许较完整的测试经验扩展（更多异常、边界、状态、风险），不做数量限制
+test_point_mode: prd_focused
+
 output_dir: output
 
 # 日志同时输出到控制台和 {log_dir}/agent.log

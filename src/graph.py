@@ -49,7 +49,8 @@ def _logged_node(name: str, fn, settings: Dict[str, Any]):
     return wrapped
 
 
-def build_graph(sections_config: str, settings_config: str, llm_provider: str = None):
+def build_graph(sections_config: str, settings_config: str, llm_provider: str = None,
+                test_point_mode: str = None):
     sections_cfg = _load_yaml(sections_config)
     settings = _load_yaml(settings_config)
     log_path = setup_logging(
@@ -59,6 +60,7 @@ def build_graph(sections_config: str, settings_config: str, llm_provider: str = 
     llm = LLMClient(settings, provider=llm_provider)
     max_retry = settings.get("validate_max_retry", 1)
     output_dir = settings.get("output_dir", "output")
+    mode = test_point_mode or settings.get("test_point_mode", "prd_focused")
 
     core_kw = sections_cfg.get("core_keywords", ["需求描述"])
     ref_kw = sections_cfg.get("reference_keywords", ["需求背景"])
@@ -82,13 +84,13 @@ def build_graph(sections_config: str, settings_config: str, llm_provider: str = 
     # 拆分功能单元节点
     node("split_units", lambda s: analyze.split_units(s, llm))
     # 测试点抽取节点
-    node("extract_points", lambda s: analyze.extract_points(s, llm))
+    node("extract_points", lambda s: analyze.extract_points(s, llm, mode))
     # 功能点校验节点
-    node("validate", lambda s: validate_mod.validate(s, llm, max_retry))
+    node("validate", lambda s: validate_mod.validate(s, llm, max_retry, mode))
     # 人工审核节点
     node("human_review", deliver.human_review)
     # 输出节点
-    node("output", lambda s: deliver.output(s, output_dir))
+    node("output", lambda s: deliver.output(s, output_dir, mode))
 
     builder.add_edge(START, "parse_md")
     builder.add_edge("parse_md", "classify_sections")
@@ -108,6 +110,7 @@ def build_graph(sections_config: str, settings_config: str, llm_provider: str = 
     graph.llm_mock = llm.mock  # 供 CLI 提示
     graph.llm_provider = llm.provider  # 供 CLI 展示
     graph.llm_model = llm.model
-    logger.info("图构建完成 | provider=%s | model=%s | mock=%s | log_file=%s",
-                llm.provider, llm.model, llm.mock, log_path)
+    graph.test_point_mode = mode
+    logger.info("图构建完成 | provider=%s | model=%s | mode=%s | mock=%s | log_file=%s",
+                llm.provider, llm.model, mode, llm.mock, log_path)
     return graph

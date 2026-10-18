@@ -54,6 +54,9 @@
 
 ```
 load_input        读取上游 test_points.json（测试点/单元/背景参考/歧义确认结果）
+                  · 测试点为"覆盖点级"：id / unit_id / title / origin
+                  · origin=prd_explicit 的测试点必须被用例覆盖；origin=derived 为建议项，可展开可忽略
+                  · 用例的前置/步骤/预期/测试数据由本环节生成（上游不再提供）
     ↓
 design_cases      用例设计（ReAct + 召回工具）：测试点聚类合并 → 用例骨架
                   （标题、覆盖测试点ID列表、优先级1-4、source_type 预判）

@@ -7,7 +7,6 @@ from .. import prompts
 from ..llm import LLMClient
 from ..state import AgentState
 
-_POINT_TYPES = ("正向", "反向", "边界", "异常", "状态流转", "频控")
 # 无需测试的原子句：图片占位符、外链、埋点
 _SKIP_RE = re.compile(r"^\[图片|^\S*地址[:：]|https?://")
 
@@ -39,7 +38,7 @@ def _validate_coverage(llm: LLMClient, sentences: List[str], points: List[Dict[s
             "coverage_rate": 1.0, "uncovered": [],
             "note": "mock 模式未执行真实覆盖判定",
         }
-    points_brief = [{"id": p["id"], "title": p["title"], "scenario": p["scenario"]} for p in points]
+    points_brief = [{"id": p["id"], "title": p["title"]} for p in points]
     result = llm.chat_json(
         prompts.VALIDATE_COVERAGE_SYSTEM,
         prompts.VALIDATE_COVERAGE_USER.format(sentences=sentences, points=points_brief),
@@ -63,12 +62,12 @@ def _validate_coverage(llm: LLMClient, sentences: List[str], points: List[Dict[s
     }
 
 
-def _cross_check(llm: LLMClient, state: AgentState) -> List[Dict[str, str]]:
+def _cross_check(llm: LLMClient, state: AgentState, mode: str, points: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     if llm.mock:
         return []
-    points_a = [{"title": p["title"], "scenario": p["scenario"]} for p in state["test_points"]]
+    points_a = [{"title": p["title"]} for p in points]
     points_b = llm.chat_json(
-        prompts.EXTRACT_POINTS_SYSTEM,
+        prompts.extract_points_system(mode),
         prompts.EXTRACT_POINTS_USER.format(
             reference_text=state["reference_text"][:2000],
             unit_title="全部功能单元",
@@ -83,7 +82,7 @@ def _cross_check(llm: LLMClient, state: AgentState) -> List[Dict[str, str]]:
         for u in state["units"]
     ]
     diff = llm.chat_json(
-        prompts.CROSS_CHECK_SYSTEM,
+        prompts.cross_check_system(mode),
         prompts.CROSS_CHECK_USER.format(
             core_text=state["core_text"], points_a=points_a, points_b=points_b, units=units
         ),
@@ -92,30 +91,34 @@ def _cross_check(llm: LLMClient, state: AgentState) -> List[Dict[str, str]]:
     return [d for d in diff if isinstance(d, dict)]
 
 
-def _checklist_gaps(state: AgentState) -> List[Dict[str, str]]:
-    """单元×维度矩阵：交互/触发类单元缺异常或反向维度时提示。"""
-    expected_dims = {
-        "触发规则": {"正向", "反向"},
-        "频控": {"频控"},
-        "交互": {"正向", "异常", "状态流转"},
-        "数据填充": {"正向", "边界"},
-        "状态流转": {"状态流转"},
-        "实验分组": {"正向", "反向"},
-    }
-    gaps = []
-    unit_types = {}
-    for p in state["test_points"]:
-        unit_types.setdefault(p["unit_id"], set()).add(p["type"])
-    for unit in state["units"]:
-        want = expected_dims.get(unit["type"], set())
-        have = unit_types.get(unit["id"], set())
-        missing = want - have
-        if missing:
-            gaps.append({
-                "unit": unit["title"],
-                "missing_dimensions": "、".join(sorted(missing)),
+def _apply_origin_guard(points: List[Dict[str, Any]], sentences: List[str]) -> List[Dict[str, str]]:
+    """origin 防伪：标了 prd_explicit 但匹配不到 PRD 规则句的，降级为 derived。"""
+    norms = [_normalize(s) for s in sentences]
+    norms = [n for n in norms if n]
+
+    def matched(title: str) -> bool:
+        nt = _normalize(title)
+        if not nt:
+            return False
+        for ns in norms:
+            if nt in ns:
+                return True
+            if len(ns) >= 6 and ns in nt:
+                return True
+        return False
+
+    corrections = []
+    for p in points:
+        if p.get("origin") != "prd_explicit":
+            continue
+        if not matched(p["title"]):
+            p["origin"] = "derived"
+            corrections.append({
+                "id": p["id"],
+                "title": p["title"],
+                "reason": "未匹配到 PRD 规则句，降级为 derived",
             })
-    return gaps
+    return corrections
 
 
 def _normalize(text: str) -> str:
@@ -144,18 +147,24 @@ def _locate_retry_units(
     return [unit_id for unit_id in all_ids if unit_id in targets]
 
 
-def validate(state: AgentState, llm: LLMClient, max_retry: int) -> Dict[str, Any]:
+def validate(state: AgentState, llm: LLMClient, max_retry: int, mode: str = "prd_focused") -> Dict[str, Any]:
     sentences = split_rule_sentences(state["core_text"])
     sentences = [s for s in sentences if not _SKIP_RE.match(s)]
 
-    coverage = _validate_coverage(llm, sentences, state["test_points"])
-    cross_diff = _cross_check(llm, state)
-    gaps = _checklist_gaps(state)
+    points = [dict(p) for p in state["test_points"]]
+    corrections = _apply_origin_guard(points, sentences)
+    explicit_points = [p for p in points if p.get("origin") == "prd_explicit"]
+    derived_count = sum(1 for p in points if p.get("origin") == "derived")
+
+    coverage = _validate_coverage(llm, sentences, explicit_points)
+    cross_diff = _cross_check(llm, state, mode, points)
 
     report = {
+        "mode": mode,
         "coverage": coverage,
+        "derived_points": {"count": derived_count},
         "cross_check_diff": cross_diff,
-        "checklist_gaps": gaps,
+        "origin_corrections": corrections,
     }
 
     retry = state.get("validate_retry", 0)
@@ -167,6 +176,7 @@ def validate(state: AgentState, llm: LLMClient, max_retry: int) -> Dict[str, Any
     hints = uncovered + [str(d["title"]).strip() for d in b_diff]
     if hints and retry < max_retry:
         return {
+            "test_points": points,
             "coverage_report": report,
             "retry_hints": hints,
             "retry_unit_ids": _locate_retry_units(uncovered, b_diff, state["units"]),
@@ -174,6 +184,7 @@ def validate(state: AgentState, llm: LLMClient, max_retry: int) -> Dict[str, Any
             "next_route": "extract_points",
         }
     return {
+        "test_points": points,
         "coverage_report": report,
         "validate_retry": retry,
         "retry_unit_ids": [],

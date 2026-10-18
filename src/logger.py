@@ -281,8 +281,10 @@ def state_summary(state: Any) -> Dict[str, Any]:
         summary["coverage_rate"] = coverage.get("coverage_rate", 0)
         summary["uncovered"] = len(coverage.get("uncovered") or [])
     if report:
+        summary["mode"] = report.get("mode")
         summary["cross_check_diff"] = len(report.get("cross_check_diff") or [])
-        summary["checklist_gaps"] = len(report.get("checklist_gaps") or [])
+        summary["derived_points"] = (report.get("derived_points") or {}).get("count", 0)
+        summary["origin_corrections"] = len(report.get("origin_corrections") or [])
     return summary
 
 
