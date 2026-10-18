@@ -30,6 +30,14 @@ llm-debug:
   temperature: 0.2
   api_key: "sk-cpass-JMNVnUgjwbb6YxuE3Ojj1M7fHGuZ0_G4"
 
+llm-command-code:
+  model: deepseek/deepseek-v4-flash
+  base_url: "https://api.commandcode.ai/provider/v1"
+  temperature: 0.2
+  api_key: "user_4mGGvhpw9ZymX1n7RvzHi91ByRZYkBLwyz4kcsjB1KgUXotceDK8rDLtKnLSioZvZfS5bWXGr9DEgvyRws1DGEh7"
+
+
+
   # 厂商特有参数可选，原样透传给接口，例如：
   # request:
   #   max_tokens: 4096
